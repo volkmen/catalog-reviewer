@@ -56,6 +56,7 @@ jobs:
           printf '.reviewer/\n.claude/skills/process-pr-comments/\n' >> .git/info/exclude
 
       - name: Process review comments
+        id: process
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -68,3 +69,24 @@ jobs:
             when it was a code fix that landed; for questions or disagreements, reply and leave
             the thread open.
           claude_args: '--allowedTools "Bash,Skill,Read,Edit,Write,Glob,Grep" --model claude-sonnet-5 --max-turns 50'
+
+      # Usage of this run, read from the action's execution file. Tokens and cost only: the
+      # session/weekly subscription percentages are not in that file (see README).
+      - name: Post token usage as a comment
+        if: ${{ !cancelled() }}
+        env:
+          EXEC_FILE: ${{ steps.process.outputs.execution_file }}
+        run: |
+          [ -n "${EXEC_FILE:-}" ] && [ -f "$EXEC_FILE" ] || exit 0
+          jq -rs 'flatten | [.[] | select(.type == "result")] | last // empty
+            | .usage as $u
+            | ($u.input_tokens // 0) as $in
+            | ($u.output_tokens // 0) as $out
+            | ($u.cache_creation_input_tokens // 0) as $cw
+            | ($u.cache_read_input_tokens // 0) as $cr
+            | "**[Processor]** Usage for this run: \($in + $out + $cw + $cr) tokens total"
+              + " (input \($in), output \($out), cache write \($cw), cache read \($cr))"
+              + " over \(.num_turns // "?") turns, about $\((.total_cost_usd // 0) * 100 | round / 100)."' \
+            "$EXEC_FILE" > "$RUNNER_TEMP/usage.md"
+          [ -s "$RUNNER_TEMP/usage.md" ] || exit 0
+          gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/usage.md"

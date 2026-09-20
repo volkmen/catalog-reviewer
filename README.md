@@ -65,7 +65,7 @@ runs in CI via `.github/workflows/process-pr.yml`, called from catalog on a
 
 ## Usage report
 
-After each review, `review-pr.yml` posts a PR comment with the run's token counts (input, output,
+After each review (and each comment-processing run, tagged `**[Processor]**`), the workflow posts a PR comment with the run's token counts (input, output,
 cache write/read), turns and approximate cost, read from the action's execution file.
 **Not included:** the session/weekly subscription percentages shown by `/usage`. They are not in
 the execution file; getting them needs a separate call to an undocumented Anthropic endpoint with
