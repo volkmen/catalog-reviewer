@@ -1,0 +1,88 @@
+name: Review PR (reusable)
+
+# Called from volkmen/catalog. Checks out the PR branch of catalog and this repo, installs the
+# pr-reviewer skill into the workspace (uncommitted) and runs it unattended.
+
+on:
+  workflow_call:
+    inputs:
+      pr:
+        description: Pull request number in the calling repository
+        required: true
+        type: string
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+      REVIEWER_REPO_TOKEN:
+        description: Token with read access to volkmen/catalog-reviewer (this repo)
+        required: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ inputs.pr }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check out the PR branch (same-repo PRs only)
+        run: |
+          if [ "$(gh pr view "$PR_NUMBER" --json isCrossRepository -q .isCrossRepository)" = "true" ]; then
+            echo "Fork PR - skipping." >&2
+            exit 1
+          fi
+          gh pr checkout "$PR_NUMBER"
+
+      - uses: actions/checkout@v6
+        with:
+          repository: volkmen/catalog-reviewer
+          path: .reviewer
+          # github.token cannot read another private repo; needs a PAT/deploy token with read access.
+          token: ${{ secrets.REVIEWER_REPO_TOKEN }}
+
+      - name: Install the skill into the workspace
+        run: |
+          mkdir -p .claude/skills
+          rm -rf .claude/skills/pr-reviewer
+          cp -r .reviewer/.claude/skills/pr-reviewer .claude/skills/pr-reviewer
+
+      - name: Review
+        id: review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            /pr-reviewer ${{ env.PR_NUMBER }}
+
+            UNATTENDED: automated CI run, no user to answer. Post the review directly in one
+            API call; do not draft for approval and do not end with a question.
+          claude_args: '--allowedTools "Bash,Skill,Read,Glob,Grep" --model claude-sonnet-5 --max-turns 50'
+
+      - name: Post the result as a comment if no review was posted
+        if: ${{ !cancelled() }}
+        env:
+          EXEC_FILE: ${{ steps.review.outputs.execution_file }}
+        run: |
+          [ -n "${EXEC_FILE:-}" ] && [ -f "$EXEC_FILE" ] || exit 0
+          SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q .headRefOid)
+          n=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" --paginate \
+            --jq ".[] | select(.commit_id == \"$SHA\") | select(.body | startswith(\"**[Reviewer]**\")) | .id" | wc -l)
+          [ "$n" -gt 0 ] && exit 0
+          result=$(jq -rs 'flatten | [.[] | select(.type == "result")] | last | .result // empty' "$EXEC_FILE")
+          {
+            echo '**[Reviewer]** Automatic fallback: the review agent did not post a review for this commit.'
+            echo
+            echo "${result:-No result was captured.}"
+            echo
+            echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } > "$RUNNER_TEMP/fallback.md"
+          gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/fallback.md"
