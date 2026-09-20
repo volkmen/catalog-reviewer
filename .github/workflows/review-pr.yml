@@ -13,9 +13,6 @@ on:
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN:
         required: true
-      REVIEWER_REPO_TOKEN:
-        description: Token with read access to volkmen/catalog-reviewer (this repo)
-        required: true
 
 jobs:
   review:
@@ -46,8 +43,6 @@ jobs:
         with:
           repository: volkmen/catalog-reviewer
           path: .reviewer
-          # github.token cannot read another private repo; needs a PAT/deploy token with read access.
-          token: ${{ secrets.REVIEWER_REPO_TOKEN }}
 
       - name: Install the skill into the workspace
         run: |

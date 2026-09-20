@@ -47,7 +47,6 @@ jobs:
       pr: ${{ github.event.issue.number }}
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-      REVIEWER_REPO_TOKEN: ${{ secrets.REVIEWER_REPO_TOKEN }}   # read access to this repo
 ```
 
 The reusable workflow checks out the PR's branch and this repo, drops the skill into the
