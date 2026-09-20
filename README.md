@@ -62,3 +62,11 @@ code-change requests, replies, commits and pushes to the PR branch, and resolves
 fix landed. It is self-contained (no dependency on catalog's `create-commit`/`push` skills) and
 runs in CI via `.github/workflows/process-pr.yml`, called from catalog on a
 `@volkmenYaryiClaude process` mention. Unlike the reviewer it needs `contents: write`.
+
+## Usage report
+
+After each review, `review-pr.yml` posts a PR comment with the run's token counts (input, output,
+cache write/read), turns and approximate cost, read from the action's execution file.
+**Not included:** the session/weekly subscription percentages shown by `/usage`. They are not in
+the execution file; getting them needs a separate call to an undocumented Anthropic endpoint with
+the OAuth token, which is not implemented.
