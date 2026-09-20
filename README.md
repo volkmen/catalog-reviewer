@@ -12,7 +12,9 @@ the code it reviews, so it can be changed, versioned and run without touching `c
   references/
     catalog-checklist.md          # what to check that only a reviewer who knows catalog would
     posting.md                    # how to submit ONE review via gh (payload, diff-line check)
-.github/workflows/review-pr.yml   # reusable workflow (workflow_call) that catalog calls
+.claude/skills/process-pr-comments/SKILL.md   # fixes + replies + resolves review threads
+.github/workflows/review-pr.yml   # reusable workflow (workflow_call) for the reviewer
+.github/workflows/process-pr.yml  # reusable workflow for process-pr-comments
 ```
 
 The skill deliberately does **not** copy catalog's rules. It tells the reviewer to read
@@ -53,7 +55,10 @@ The reusable workflow checks out the PR's branch and this repo, drops the skill 
 workspace and runs `/pr-reviewer <pr>` unattended. Trigger on mention only: reviewing every
 push cost ~$2.90 per run on a large PR (see the disabled `pr-reviewer.disabled` in catalog).
 
-## Not covered here
+## process-pr-comments
 
-Processing review comments (`process-pr-comments`) still lives in `catalog` because it edits
-code, commits and pushes on the PR branch. Moving it is a separate step.
+`.claude/skills/process-pr-comments/` works through the unresolved review threads of a PR: fixes
+code-change requests, replies, commits and pushes to the PR branch, and resolves threads whose
+fix landed. It is self-contained (no dependency on catalog's `create-commit`/`push` skills) and
+runs in CI via `.github/workflows/process-pr.yml`, called from catalog on a
+`@volkmenYaryiClaude process` mention. Unlike the reviewer it needs `contents: write`.

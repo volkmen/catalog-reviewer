@@ -1,0 +1,70 @@
+name: Process PR comments (reusable)
+
+# Called from volkmen/catalog. Checks out the PR branch and this repo, installs the
+# process-pr-comments skill into the workspace (uncommitted) and runs it unattended. The skill
+# commits and pushes fixes to the PR branch, so the caller must grant contents: write.
+
+on:
+  workflow_call:
+    inputs:
+      pr:
+        description: Pull request number in the calling repository
+        required: true
+        type: string
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ inputs.pr }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check out the PR branch (same-repo PRs only)
+        run: |
+          if [ "$(gh pr view "$PR_NUMBER" --json isCrossRepository -q .isCrossRepository)" = "true" ]; then
+            echo "Fork PR - skipping." >&2
+            exit 1
+          fi
+          gh pr checkout "$PR_NUMBER"
+          git config user.name "claude[bot]"
+          git config user.email "claude[bot]@users.noreply.github.com"
+
+      - uses: actions/checkout@v6
+        with:
+          repository: volkmen/catalog-reviewer
+          path: .reviewer
+
+      - name: Install the skill into the workspace
+        run: |
+          mkdir -p .claude/skills
+          rm -rf .claude/skills/process-pr-comments
+          cp -r .reviewer/.claude/skills/process-pr-comments .claude/skills/process-pr-comments
+          # Keep the helper files out of `git status` so they are never committed.
+          printf '.reviewer/\n.claude/skills/process-pr-comments/\n' >> .git/info/exclude
+
+      - name: Process review comments
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            /process-pr-comments ${{ env.PR_NUMBER }}
+
+            UNATTENDED: automated CI run, no user to answer prompts. The maintainer's mention is
+            the go-ahead: fix code-change comments, commit and `git push` to this PR's branch
+            (never force-push, never --no-verify), and post short replies. Resolve a thread only
+            when it was a code fix that landed; for questions or disagreements, reply and leave
+            the thread open.
+          claude_args: '--allowedTools "Bash,Skill,Read,Edit,Write,Glob,Grep" --model claude-sonnet-5 --max-turns 50'
